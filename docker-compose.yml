@@ -1,0 +1,88 @@
+services:
+  mongodb:
+    image: mongodb/mongodb-community-server:latest
+    container_name: mongodb_server
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - project1
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - project1
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user_service
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGODB_URL=mongodb://mongodb:27017/user-db
+    depends_on:
+      - mongodb
+    networks:
+      - project1
+
+  task-service:
+    build:
+      context: ./task-service
+      dockerfile: Dockerfile
+    container_name: task_service
+    ports:
+      - "3002:3002"
+    restart: always
+    environment:
+      - PORT=3002
+      - MONGODB_URL=mongodb://mongodb:27017/task-db
+      - EXCHANGE=TASK-EXCHANGE
+      - TASK_CREATED_ROUTING_KEY=task.created
+      - TASK_QUEUE=task-created
+      - RABBIT_MQ_CONNECT=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      mongodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - project1
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification_service
+    restart: always
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+      - TASK_QUEUE=task-created
+      - RABBIT_MQ_CONNECT=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - project1
+
+volumes:
+  mongodb_data:
+
+networks:
+  project1:
